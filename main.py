@@ -154,25 +154,18 @@ def transcribe():
 
 
 def summarize_name(text):
-    prompt = f"{text}"
-
-    if len(prompt) < 250: #if less than 250 chars
-        summary = prompt
-        return summary
+    prompt = f" extract the name from: {text}"
     
     #Use Cohere's summarize endpoint
     response = co.chat(
 
-        text=prompt,
-        length='short',  # You can adjust the length: 'short', 'medium', 'long'
-        format='paragraph',
+        message= prompt,
         model='command-r-plus-08-2024',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="go through this paragraph carefully and output a single word that is that persons name"
     )
 
-    summary = response.summary
-    return summary
+    
+    return response.text
 
 def summarize_transcription(text):
     prompt = f"{text}"
@@ -182,13 +175,13 @@ def summarize_transcription(text):
         return summary
     
     #Use Cohere's summarize endpoint
-    response = co.chat(
+    response = co.summarize(
         text=prompt,
-        length='short',  # You can adjust the length: 'short', 'medium', 'long'
-        format='paragraph',
-        model='command-r-plus-08-2024',  # Choose the appropriate model
+        length= "short",
+        format = "paragraph",
+        model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="summarize each sentence with bullet points, and no Here is a short summary:, just a empty line and then after that line the bullet points"
+        additional_command= "summarize to bullet points"
     )
 
     summary = response.summary
