@@ -20,8 +20,8 @@ if not cohere_api_key:
 co = cohere.Client(cohere_api_key)
 
 def textToWord():
-    doc = aw.Document("transcription.txt")
-    doc.save("TranscribedText.docx") 
+    doc = aw.Document("summary.txt")
+    doc.save("summary.docx") 
 
 
 def main():
@@ -148,12 +148,14 @@ def transcribe():
 
     
     summary = summarize_transcription(transcription_text)
+    with open('summary.txt', 'w', encoding='utf-8') as f:
+        f.write(transcription_text)
 
     textToWord()
 
 def summarize_transcription(text):
     #Ensure 'name' is the first sentence
-    prompt = f"name.\n\n{text}"
+    prompt = f"{text}"
 
     if len(prompt) < 250: #if less than 250 chars
         summary = prompt
