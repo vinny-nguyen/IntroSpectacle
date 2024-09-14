@@ -1,6 +1,6 @@
 import cohere
 
-co = cohere.Client("qNAfz59ZFGtOxOwEcm66pDZj1XiBNp2CwAbxiFi8")
+co = cohere.Client(api_key="<YOUR API KEY>")
 
 response = co.chat(
     model="command-r-plus",
