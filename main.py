@@ -148,6 +148,11 @@ def transcribe():
         f.write(transcription_text)
         f.write(summary)
     textToWord()
+    summaryname = summarize_name(transcription_text)
+    with open("name.txt", "w", encoding='utf-8') as f:
+        f.write(summaryname)
+
+
 def summarize_name(text):
     prompt = f"{text}"
 
@@ -156,13 +161,14 @@ def summarize_name(text):
         return summary
     
     #Use Cohere's summarize endpoint
-    response = co.summarize(
+    response = co.chat(
+
         text=prompt,
         length='short',  # You can adjust the length: 'short', 'medium', 'long'
         format='paragraph',
-        model='summarize-medium',  # Choose the appropriate model
+        model='command-r-plus-08-2024',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="summarize each sentence with bullet points, and no Here is a short summary:, just a empty line and then after that line the bullet points"
+        additional_command="go through this paragraph carefully and output a single word that is that persons name"
     )
 
     summary = response.summary
@@ -176,11 +182,11 @@ def summarize_transcription(text):
         return summary
     
     #Use Cohere's summarize endpoint
-    response = co.summarize(
+    response = co.chat(
         text=prompt,
         length='short',  # You can adjust the length: 'short', 'medium', 'long'
         format='paragraph',
-        model='summarize-medium',  # Choose the appropriate model
+        model='command-r-plus-08-2024',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
         additional_command="summarize each sentence with bullet points, and no Here is a short summary:, just a empty line and then after that line the bullet points"
     )
