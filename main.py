@@ -146,7 +146,7 @@ def transcribe():
     with open('transcription.txt', 'w', encoding='utf-8') as f:
         f.write(transcription_text)
 
-    
+
     summary = summarize_transcription(transcription_text)
     with open('summary.txt', 'w', encoding='utf-8') as f:
         f.write(transcription_text)
