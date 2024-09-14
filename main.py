@@ -144,10 +144,32 @@ def transcribe():
     with open('transcription.txt', 'w', encoding='utf-8') as f:
         f.write(transcription_text)
 
-        summary = summarize_transcription(transcription_text)
+    
+    summary = summarize_transcription(transcription_text)
 
-        f.write(result['text'])
-    textToWord()
+    textToWord(summary)
+
+def summarize_transcription(text):
+    # Ensure 'name' is the first sentence
+    prompt = f"name.\n\n{text}"
+
+    # Use Cohere's summarize endpoint
+    response = co.summarize(
+        text=prompt,
+        length='medium',  # You can adjust the length: 'short', 'medium', 'long'
+        format='paragraph',
+        model='summarize-medium',  # Choose the appropriate model
+        temperature=0.5,  # Controls randomness
+        additional_command="Start the summary with the word 'name'."
+    )
+
+    summary = response.summary
+
+    # Ensure the summary starts with 'name.'
+    if not summary.lower().startswith('name'):
+        summary = 'name. ' + summary
+
+    return summary
 
 if __name__ == "__main__":
     main()
