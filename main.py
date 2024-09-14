@@ -93,8 +93,10 @@ def main():
                 recording = not recording  # Toggle recording state
 
                 if recording:
+                    filename = "photo.png"
+                    cv.imwrite(filename, image)
                     # Start recording
-                    filename = f"video_{video_count}.avi"
+                    filename = "video.avi"
                     fourcc = cv.VideoWriter_fourcc(*'XVID')
                     fps = 20.0
                     frame_size = (image.shape[1], image.shape[0])
@@ -106,6 +108,7 @@ def main():
                     print(f"Stopped recording: video_{video_count}.avi")
                     video_count += 1
                     video_writer = None
+                    transcribe()
 
 
             elif key == 27:  # 'Esc' key to exit
@@ -116,9 +119,11 @@ def main():
         cap.release()
         cv.destroyAllWindows()
 
-def transcribe(audio):
+
+def transcribe():
     result = model.transcribe("audio.mp3")
-    print(result["text"])
+    with open('transcription.txt', 'w', encoding='utf-8') as f:
+        f.write(result['text'])
 
 if __name__ == "__main__":
     main()
