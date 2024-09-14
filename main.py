@@ -5,7 +5,9 @@ import whisper
 import cohere
 import os
 import aspose.words as aw
+from dotenv import load_dotenv
 
+load_dotenv()
 
 cohere_api_key = os.environ.get('COHERE_API_KEY')
 co = cohere.Client(cohere_api_key)
@@ -138,7 +140,7 @@ def main():
 
 
 def transcribe():
-    result = model.transcribe("audio.mp3")
+    result = model.transcribe("audio.m4a")
     transcription_text = result['text']
 
     with open('transcription.txt', 'w', encoding='utf-8') as f:
@@ -147,29 +149,29 @@ def transcribe():
     
     summary = summarize_transcription(transcription_text)
 
-    textToWord(summary)
+    textToWord()
 
 def summarize_transcription(text):
-    # Ensure 'name' is the first sentence
+    #Ensure 'name' is the first sentence
     prompt = f"name.\n\n{text}"
 
-    # Use Cohere's summarize endpoint
+    if len(prompt) < 250: #if less than 250 chars
+        summary = prompt
+        return summary
+    
+    #Use Cohere's summarize endpoint
     response = co.summarize(
         text=prompt,
-        length='medium',  # You can adjust the length: 'short', 'medium', 'long'
+        length='short',  # You can adjust the length: 'short', 'medium', 'long'
         format='paragraph',
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="Start the summary with the word 'name'."
+        additional_command="reduce to 300 characters and make them point form"
     )
 
     summary = response.summary
-
-    # Ensure the summary starts with 'name.'
-    if not summary.lower().startswith('name'):
-        summary = 'name. ' + summary
-
     return summary
+
 
 if __name__ == "__main__":
     main()
