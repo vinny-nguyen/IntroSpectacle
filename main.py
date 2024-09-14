@@ -146,6 +146,8 @@ def transcribe():
 
         summary = summarize_transcription(transcription_text)
 
+        f.write(result['text'])
+    textToWord()
 
 if __name__ == "__main__":
     main()
