@@ -8,6 +8,9 @@ import aspose.words as aw
 
 
 cohere_api_key = os.environ.get('COHERE_API_KEY')
+co = cohere.Client(cohere_api_key)
+
+
 model = whisper.load_model("base")
 if not cohere_api_key:
     raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
@@ -136,8 +139,13 @@ def main():
 
 def transcribe():
     result = model.transcribe("audio.mp3")
+    transcription_text = result['text']
+
     with open('transcription.txt', 'w', encoding='utf-8') as f:
-        f.write(result['text'])
+        f.write(transcription_text)
+
+        summary = summarize_transcription(transcription_text)
+
 
 if __name__ == "__main__":
     main()
