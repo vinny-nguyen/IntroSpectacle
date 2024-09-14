@@ -2,8 +2,15 @@ import cv2 as cv
 import mediapipe as mp
 import time
 import whisper
+import aspose.words as aw
+
 
 model = whisper.load_model("base")
+
+def textToWord():
+    doc = aw.Document("transcription.txt")
+    doc.save("TranscribedText.docx") 
+
 
 def main():
     cap = cv.VideoCapture(0)
