@@ -19,8 +19,10 @@ if not cohere_api_key:
 
 
 def textToWord():
-    doc = aw.Document("summaryofco.txt")
-    doc.save("summary.docx") 
+    doc = aw.Document("transcription.txt")
+    doc.save("transcription.docx") 
+    #doc = aw.Document("summaryco.txt")
+    #doc.save("summaryco.docx") 
 
 
 def main():
@@ -141,16 +143,30 @@ def main():
 def transcribe():
     result = model.transcribe("audio.m4a")
     transcription_text = result['text']
-
+    summary = summarize_transcription(transcription_text)
     with open('transcription.txt', 'w', encoding='utf-8') as f:
         f.write(transcription_text)
-
-
-    summary = summarize_transcription(transcription_text)
-    with open('summaryofco.txt', 'w', encoding='utf-8') as f:
         f.write(summary)
-
     textToWord()
+def summarize_name(text):
+    prompt = f"{text}"
+
+    if len(prompt) < 250: #if less than 250 chars
+        summary = prompt
+        return summary
+    
+    #Use Cohere's summarize endpoint
+    response = co.summarize(
+        text=prompt,
+        length='short',  # You can adjust the length: 'short', 'medium', 'long'
+        format='paragraph',
+        model='summarize-medium',  # Choose the appropriate model
+        temperature=0.5,  # Controls randomness
+        additional_command="summarize each sentence with bullet points, and no Here is a short summary:, just a empty line and then after that line the bullet points"
+    )
+
+    summary = response.summary
+    return summary
 
 def summarize_transcription(text):
     prompt = f"{text}"
@@ -166,7 +182,7 @@ def summarize_transcription(text):
         format='paragraph',
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="summarize to bullet points"
+        additional_command="summarize each sentence with bullet points, and no Here is a short summary:, just a empty line and then after that line the bullet points"
     )
 
     summary = response.summary
