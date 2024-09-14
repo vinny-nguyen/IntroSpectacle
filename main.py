@@ -154,7 +154,7 @@ def transcribe():
 
 
 def summarize_name(text):
-    prompt = f" extract the name from: {text}"
+    prompt = f" extract the name from here, only the name should be displayed no other words just name: {text}"
     
     #Use Cohere's summarize endpoint
     response = co.chat(
@@ -181,7 +181,7 @@ def summarize_transcription(text):
         format = "paragraph",
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command= "summarize to bullet points"
+        additional_command= "add an empty line and then add the summary with the bullet points in a new line below the empty one"
     )
 
     summary = response.summary
