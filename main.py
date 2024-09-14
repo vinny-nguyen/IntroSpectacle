@@ -2,10 +2,20 @@ import cv2 as cv
 import mediapipe as mp
 import time
 import whisper
+import cohere
+import os
 import aspose.words as aw
 
 
+cohere_api_key = os.environ.get('COHERE_API_KEY')
+co = cohere.Client(cohere_api_key)
+
+
 model = whisper.load_model("base")
+if not cohere_api_key:
+    raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
+
+co = cohere.Client(cohere_api_key)
 
 def textToWord():
     doc = aw.Document("transcription.txt")
@@ -129,9 +139,37 @@ def main():
 
 def transcribe():
     result = model.transcribe("audio.mp3")
+    transcription_text = result['text']
+
     with open('transcription.txt', 'w', encoding='utf-8') as f:
-        f.write(result['text'])
-    textToWord()
+        f.write(transcription_text)
+
+    
+    summary = summarize_transcription(transcription_text)
+
+    textToWord(summary)
+
+def summarize_transcription(text):
+    # Ensure 'name' is the first sentence
+    prompt = f"name.\n\n{text}"
+
+    # Use Cohere's summarize endpoint
+    response = co.summarize(
+        text=prompt,
+        length='medium',  # You can adjust the length: 'short', 'medium', 'long'
+        format='paragraph',
+        model='summarize-medium',  # Choose the appropriate model
+        temperature=0.5,  # Controls randomness
+        additional_command="Start the summary with the word 'name'."
+    )
+
+    summary = response.summary
+
+    # Ensure the summary starts with 'name.'
+    if not summary.lower().startswith('name'):
+        summary = 'name. ' + summary
+
+    return summary
 
 if __name__ == "__main__":
     main()
