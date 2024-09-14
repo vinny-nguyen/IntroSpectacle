@@ -2,8 +2,15 @@ import cv2 as cv
 import mediapipe as mp
 import time
 import whisper
+import cohere
+import os
 
+cohere_api_key = os.environ.get('COHERE_API_KEY')
 model = whisper.load_model("base")
+if not cohere_api_key:
+    raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
+
+co = cohere.Client(cohere_api_key)
 
 def main():
     cap = cv.VideoCapture(0)
