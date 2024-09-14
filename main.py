@@ -141,7 +141,7 @@ def main():
 
 
 def transcribe():
-    result = model.transcribe("audio.m4a")
+    result = model.transcribe("audio.wav")
     transcription_text = result['text']
     summary = summarize_transcription(transcription_text)
     with open('transcription.txt', 'w', encoding='utf-8') as f:
