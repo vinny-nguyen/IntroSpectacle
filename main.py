@@ -131,6 +131,7 @@ def transcribe():
     result = model.transcribe("audio.mp3")
     with open('transcription.txt', 'w', encoding='utf-8') as f:
         f.write(result['text'])
+    textToWord()
 
 if __name__ == "__main__":
     main()
