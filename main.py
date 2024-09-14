@@ -1,6 +1,9 @@
 import cv2 as cv
 import mediapipe as mp
 import time
+import whisper
+
+model = whisper.load_model("base")
 
 def main():
     cap = cv.VideoCapture(0)
@@ -104,6 +107,7 @@ def main():
                     video_count += 1
                     video_writer = None
 
+
             elif key == 27:  # 'Esc' key to exit
                 if recording:
                     video_writer.release()
@@ -111,6 +115,10 @@ def main():
 
         cap.release()
         cv.destroyAllWindows()
+
+def transcribe(audio):
+    result = model.transcribe("audio.mp3")
+    print(result["text"])
 
 if __name__ == "__main__":
     main()
