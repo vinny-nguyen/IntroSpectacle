@@ -17,7 +17,6 @@ model = whisper.load_model("base")
 if not cohere_api_key:
     raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
 
-co = cohere.Client(cohere_api_key)
 
 def textToWord():
     doc = aw.Document("summaryofco.txt")
@@ -167,7 +166,7 @@ def summarize_transcription(text):
         format='paragraph',
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="Reduce to 300 characters and make them point form"
+        additional_command="summarize to bullet points"
     )
 
     summary = response.summary
