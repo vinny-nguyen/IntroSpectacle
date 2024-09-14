@@ -6,6 +6,8 @@ import cohere
 import os
 import aspose.words as aw
 from dotenv import load_dotenv
+import face_recognition
+import numpy as np
 
 load_dotenv()
 
@@ -18,11 +20,73 @@ if not cohere_api_key:
     raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
 
 
+def capture_face_image():
+    cap = cv.VideoCapture(0)
+    if not cap.isOpened():
+        print("Cannot open camera")
+        return None
+
+    mp_face_detection = mp.solutions.face_detection
+
+    with mp_face_detection.FaceDetection(
+        model_selection=1, min_detection_confidence=0.5) as face_detection:
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("Can't receive frame (stream end?). Exiting ...")
+                break
+
+            # Convert the BGR image to RGB.
+            image = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+            image.flags.writeable = False
+            results = face_detection.process(image)
+
+            if results.detections:
+                # Face detected; capture the image
+                image.flags.writeable = True
+                # Convert back to BGR for OpenCV
+                image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
+                cap.release()
+                cv.destroyAllWindows()
+                return image  # Return the captured image
+
+            # Display the frame for visual feedback (optional)
+            cv.imshow('Face Capture', frame)
+            if cv.waitKey(1) & 0xFF == 27:  # Press 'Esc' to exit
+                break
+
+    cap.release()
+    cv.destroyAllWindows()
+    return None
+
+def compute_face_encoding(image):
+    # image: numpy array image in RGB format
+    face_locations = face_recognition.face_locations(image)
+    if len(face_locations) == 0:
+        print("No face found in the image.")
+        return None
+    face_encoding = face_recognition.face_encodings(image, known_face_locations=face_locations)[0]
+    return face_encoding
+
+def save_person_to_db(db, face_encoding, name, points):
+    collection = db['people']
+
+    person_document = {
+        'name': name,
+        'points': points,
+        'face_encoding': face_encoding.tolist()  # Convert NumPy array to list
+    }
+
+    result = collection.insert_one(person_document)
+    print(f"Inserted document ID: {result.inserted_id}")
+
 def textToWord():
     doc = aw.Document("transcription.txt")
     doc.save("transcription.docx") 
     #doc = aw.Document("summaryco.txt")
     #doc.save("summaryco.docx") 
+
 
 
 def main():
