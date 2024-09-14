@@ -1,10 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IntroSpectacale - Meet & Remember</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <h1>OnePiece</h1>
-    
+    <header>
+        <h1>IntroSpectacale</h1>
+        <p>Meet people, remember names.</p>
+    </header>
+    <main>
+        <div class="webcam-container">
+            <video id="webcam" autoplay></video>
+        </div>
+        <button id="start-recording">Start Recording</button>
+        <button id="stop-recording" disabled>Stop Recording</button>
+    </main>
+    <footer>
+        <p>Powered by IntroSpectacale</p>
+    </footer>
+    <script src="script.js"></script>
 </body>
 </html>
