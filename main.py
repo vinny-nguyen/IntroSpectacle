@@ -168,7 +168,7 @@ def summarize_transcription(text):
         format='paragraph',
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="reduce to 300 characters and make them point form"
+        additional_command="Reduce to 300 characters and make them point form"
     )
 
     summary = response.summary
