@@ -31,12 +31,12 @@ client = pymongo.MongoClient(mongodb_uri)
 db = client['mydatabase']  # Replace 'mydatabase' with your database name
 fs = gridfs.GridFS(db)
 
-def upload_photo_to_mongodb(filename):
+def upload_photo_to_mongodb(filename, name, summary):
     try:
         with open(filename, 'rb') as f:
             contents = f.read()
-            fs.put(contents, filename=filename)
-            print(f"Uploaded {filename} to MongoDB")
+            fs.put(contents, filename=filename, metadata={'name': name, 'summary': summary})
+            print(f"Uploaded {filename} to MongoDB with metadata.")
     except Exception as e:
         print(f"An error occurred while uploading to MongoDB: {e}")
 
@@ -125,7 +125,7 @@ def main():
                 if recording:
                     filename = "photo.png"
                     cv.imwrite(filename, image)
-                    upload_photo_to_mongodb(filename)  # Upload to MongoDB
+                    
                     # Start recording
                     filename = "video.avi"
                     fourcc = cv.VideoWriter_fourcc(*'XVID')
@@ -139,7 +139,8 @@ def main():
                     print(f"Stopped recording: video_{video_count}.avi")
                     video_count += 1
                     video_writer = None
-                    transcribe()
+                    name,summary = transcribe()
+                    upload_photo_to_mongodb(f"{name}.png", name, summary)
 
             elif key == 27:  # 'Esc' key to exit
                 if recording:
@@ -161,6 +162,7 @@ def transcribe():
     summaryname = summarize_name(transcription_text)
     with open("name.txt", "w", encoding='utf-8') as f:
         f.write(summaryname)
+    return summaryname, summary #returning name and summary for later use
 
 
 def summarize_name(text):
