@@ -1,8 +1,8 @@
-aspose_words==24.8.0
+aspose-words==24.8.0
 cohere==5.9.2
 mediapipe==0.10.14
-openai_whisper==20231117
-opencv_contrib_python==4.10.0.82
-opencv_python==4.10.0.82
+openai-whisper==20231117
+opencv-contrib_python==4.10.0.82
+opencv-python==4.10.0.82
 pymongo==4.8.0
 python-dotenv==1.0.1
