@@ -222,8 +222,8 @@ def main():
                     print(f"Stopped recording: video_{video_count}.avi")
                     video_count += 1
                     video_writer = None
-                    name,summary = transcribe()
-                    upload_photo_to_mongodb("photo.png", name, summary)
+                    name,summarywords = transcribe()
+                    upload_photo_to_mongodb("photo.png", name, summarywords)
 
             elif key == 27:  # 'Esc' key to exit
                 if recording:
@@ -235,12 +235,14 @@ def main():
 
 
 def transcribe():
-    result = model.transcribe("audio.wav")
+    result = model.transcribe("audio.mp3")
     transcription_text = result['text']
     summary = summarize_transcription(transcription_text)
     with open('transcription.txt', 'w', encoding='utf-8') as f:
         f.write(transcription_text)
-        f.write(summary)
+        if summary:  # Only write the summary if it's not empty
+            f.write('\n\nSummary:\n')
+            f.write(summary)
     textToWord()
     summaryname = summarize_name(transcription_text)
     with open("name.txt", "w", encoding='utf-8') as f:
@@ -248,7 +250,8 @@ def transcribe():
     summarywords = summarize_words(transcription_text)
     with open("words.txt", "w", encoding='utf-8') as f:
         f.write(summarywords)
-    return summaryname, summary #returning name and summary for later use
+    return summaryname, summarywords  # Returning name and summary for later use
+
 
 
 def summarize_name(text):
@@ -283,18 +286,17 @@ def summarize_words(text):
 def summarize_transcription(text):
     prompt = f"{text}"
 
-    if len(prompt) < 250: #if less than 250 chars
-        summary = prompt
-        return summary
+    if len(prompt) < 250:  # If less than 250 chars
+        return ''  # Return empty string, no summary needed
     
-    #Use Cohere's summarize endpoint
+    # Use Cohere's summarize endpoint
     response = co.summarize(
         text=prompt,
-        length= "short",
-        format = "paragraph",
+        length="short",
+        format="paragraph",
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command= "add an empty line and then add the summary with the bullet points in a new line below the empty one"
+        additional_command="add an empty line and then add the summary with the bullet points in a new line below the empty one"
     )
 
     summary = response.summary
