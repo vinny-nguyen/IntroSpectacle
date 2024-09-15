@@ -1,0 +1,17 @@
+{
+  "name": "onepiece",
+  "version": "1.0.0",
+  "description": "© IntroSpectacle. Erkam Boyacioglu, Ruddra Kantaria, Joyi Xue, and Vincent Nguyen @ Hack the North 2024. University of Waterloo, Waterloo, Ontario, Canada. All rights reserved.",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.21.0",
+    "mongoose": "^8.6.2"
+  }
+}
