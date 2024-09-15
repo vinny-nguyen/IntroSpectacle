@@ -139,8 +139,8 @@ def main():
                     print(f"Stopped recording: video_{video_count}.avi")
                     video_count += 1
                     video_writer = None
-                    name,summary = transcribe()
-                    upload_photo_to_mongodb("photo.png", name, summary)
+                    name,summarywords = transcribe()
+                    upload_photo_to_mongodb("photo.png", name, summarywords)
 
             elif key == 27:  # 'Esc' key to exit
                 if recording:
@@ -152,7 +152,7 @@ def main():
 
 
 def transcribe():
-    result = model.transcribe("audio.wav")
+    result = model.transcribe("audio.mp3")
     transcription_text = result['text']
     summary = summarize_transcription(transcription_text)
     with open('transcription.txt', 'w', encoding='utf-8') as f:
@@ -165,7 +165,7 @@ def transcribe():
     summarywords = summarize_words(transcription_text)
     with open("words.txt", "w", encoding='utf-8') as f:
         f.write(summarywords)
-    return summaryname, summary #returning name and summary for later use
+    return summarywords, summary #returning name and summary for later use
 
 
 def summarize_name(text):
