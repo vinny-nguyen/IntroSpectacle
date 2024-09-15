@@ -6,8 +6,8 @@ import cohere
 import os
 import aspose.words as aw
 from dotenv import load_dotenv
-import face_recognition
-import numpy as np
+import pymongo
+import gridfs
 
 load_dotenv()
 
@@ -20,73 +20,32 @@ if not cohere_api_key:
     raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
 
 
-def capture_face_image():
-    cap = cv.VideoCapture(0)
-    if not cap.isOpened():
-        print("Cannot open camera")
-        return None
 
-    mp_face_detection = mp.solutions.face_detection
+mongodb_uri = os.environ.get('MONGODB_URI')
 
-    with mp_face_detection.FaceDetection(
-        model_selection=1, min_detection_confidence=0.5) as face_detection:
+if not mongodb_uri:
+    raise ValueError("No MongoDB URI found. Please set the MONGODB_URI environment variable.")
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Can't receive frame (stream end?). Exiting ...")
-                break
 
-            # Convert the BGR image to RGB.
-            image = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-            image.flags.writeable = False
-            results = face_detection.process(image)
+client = pymongo.MongoClient(mongodb_uri)
+db = client['mydatabase']  # Replace 'mydatabase' with your database name
+fs = gridfs.GridFS(db)
 
-            if results.detections:
-                # Face detected; capture the image
-                image.flags.writeable = True
-                # Convert back to BGR for OpenCV
-                image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-                cap.release()
-                cv.destroyAllWindows()
-                return image  # Return the captured image
+def upload_photo_to_mongodb(filename):
+    try:
+        with open(filename, 'rb') as f:
+            contents = f.read()
+            fs.put(contents, filename=filename)
+            print(f"Uploaded {filename} to MongoDB")
+    except Exception as e:
+        print(f"An error occurred while uploading to MongoDB: {e}")
 
-            # Display the frame for visual feedback (optional)
-            cv.imshow('Face Capture', frame)
-            if cv.waitKey(1) & 0xFF == 27:  # Press 'Esc' to exit
-                break
-
-    cap.release()
-    cv.destroyAllWindows()
-    return None
-
-def compute_face_encoding(image):
-    # image: numpy array image in RGB format
-    face_locations = face_recognition.face_locations(image)
-    if len(face_locations) == 0:
-        print("No face found in the image.")
-        return None
-    face_encoding = face_recognition.face_encodings(image, known_face_locations=face_locations)[0]
-    return face_encoding
-
-def save_person_to_db(db, face_encoding, name, points):
-    collection = db['people']
-
-    person_document = {
-        'name': name,
-        'points': points,
-        'face_encoding': face_encoding.tolist()  # Convert NumPy array to list
-    }
-
-    result = collection.insert_one(person_document)
-    print(f"Inserted document ID: {result.inserted_id}")
 
 def textToWord():
     doc = aw.Document("transcription.txt")
     doc.save("transcription.docx") 
     #doc = aw.Document("summaryco.txt")
     #doc.save("summaryco.docx") 
-
 
 
 def main():
@@ -142,25 +101,12 @@ def main():
                     bbox = int(bboxC.xmin * iw), int(bboxC.ymin * ih), \
                            int(bboxC.width * iw), int(bboxC.height * ih)
 
-                    # Draw a rectangle around the face
-                    #cv.rectangle(image, bbox, (0, 255, 0), 2)
-
                     # Set the box size to 200x150 pixels
                     box_width, box_height = 200, 150  # Size of the white box
 
                     # Position the box to the right of the head
                     x = bbox[0] + bbox[2] + 10  # 10 pixels to the right of the face bounding box
                     y = bbox[1] + int(bbox[3] / 2) - int(box_height / 2)  # Centered vertically
-
-                    # Remove the constraints that prevent the box from exiting the frame
-                    # Comment out or remove the following code:
-
-                    # if x + box_width > iw:
-                    #     x = iw - box_width - 10
-                    # if y + box_height > ih:
-                    #     y = ih - box_height - 10
-                    # if y < 0:
-                    #     y = 10
 
                     # Draw the white box
                     cv.rectangle(image, (x, y), (x + box_width, y + box_height), (255, 255, 255), -1)
@@ -179,6 +125,7 @@ def main():
                 if recording:
                     filename = "photo.png"
                     cv.imwrite(filename, image)
+                    upload_photo_to_mongodb(filename)  # Upload to MongoDB
                     # Start recording
                     filename = "video.avi"
                     fourcc = cv.VideoWriter_fourcc(*'XVID')
@@ -193,7 +140,6 @@ def main():
                     video_count += 1
                     video_writer = None
                     transcribe()
-
 
             elif key == 27:  # 'Esc' key to exit
                 if recording:
