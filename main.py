@@ -10,37 +10,29 @@ import pymongo
 import gridfs
 import numpy as np
 import face_recognition
+import re
+import threading
+
 load_dotenv()
 
 cohere_api_key = os.environ.get('COHERE_API_KEY')
 co = cohere.Client(cohere_api_key)
 
-
 model = whisper.load_model("base")
 if not cohere_api_key:
     raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
 
-
-
 mongodb_uri = os.environ.get('MONGODB_URI')
-
 if not mongodb_uri:
     raise ValueError("No MongoDB URI found. Please set the MONGODB_URI environment variable.")
-
 
 client = pymongo.MongoClient(mongodb_uri)
 db = client['mydatabase']  # Replace 'mydatabase' with your database name
 fs = gridfs.GridFS(db)
 
-def upload_photo_to_mongodb(filename, name, summary):
-    try:
-        with open(filename, 'rb') as f:
-            contents = f.read()
-            fs.put(contents, filename=filename, metadata={'name': name, 'summary': summary})
-            print(f"Uploaded {filename} to MongoDB with metadata.")
-    except Exception as e:
-        print(f"An error occurred while uploading to MongoDB: {e}")
-
+def sanitize_filename(name):
+    # Remove any characters that are invalid in filenames
+    return re.sub(r'[\\/*?:"<>|]', "", name)
 
 def load_known_faces_from_db():
     known_face_encodings = []
@@ -63,37 +55,26 @@ def load_known_faces_from_db():
                 known_face_encodings.append(face_encodings[0])
 
                 # Handle cases where metadata is None
-                if grid_out.metadata is not None:
-                    known_face_names.append(grid_out.metadata.get('name', 'Unknown'))
-                    known_face_summaries.append(grid_out.metadata.get('summary', ''))
-                else:
-                    # Use default values if metadata is missing
-                    known_face_names.append('Unknown')
-                    known_face_summaries.append('')
+                metadata = grid_out.metadata or {}
+                known_face_names.append(metadata.get('name', 'Unknown'))
+                known_face_summaries.append(metadata.get('summary', ''))
             else:
                 print(f"No face found in image {grid_out.filename}")
 
     return known_face_encodings, known_face_names, known_face_summaries
 
-
-
-
-
-
-
-
-
-
-
-
-
+def upload_photo_to_mongodb(filename, name, summary):
+    try:
+        with open(filename, 'rb') as f:
+            contents = f.read()
+            fs.put(contents, filename=filename, metadata={'name': name.strip(), 'summary': summary.strip()})
+            print(f"Uploaded {filename} to MongoDB with metadata.")
+    except Exception as e:
+        print(f"An error occurred while uploading to MongoDB: {e}")
 
 def textToWord():
     doc = aw.Document("transcription.txt")
-    doc.save("transcription.docx") 
-    #doc = aw.Document("summaryco.txt")
-    #doc.save("summaryco.docx") 
-
+    doc.save("transcription.docx")
 
 def main():
     # Load known faces and metadata
@@ -108,48 +89,87 @@ def main():
     video_writer = None
     video_count = 1  # Counter for saved videos
 
-    mp_face_detection = mp.solutions.face_detection
+    face_locations = []
+    face_names = []
+    face_summaries = []
 
-    with mp_face_detection.FaceDetection(
-        model_selection=1, min_detection_confidence=0.5) as face_detection:
+    # Adjust this value to process face recognition every N frames
+    process_every_n_frames = 10  # Increase this number to make it faster
+    frame_counter = 0
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Can't receive frame (stream end?). Exiting ...")
-                break
+    # Create a lock for thread synchronization
+    lock = threading.Lock()
 
-            # Convert the BGR image to RGB.
-            rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+    def face_recognition_thread(rgb_small_frame):
+        nonlocal face_locations, face_names, face_summaries
+        # Perform face detection and recognition
+        # Use Mediapipe for face detection
+        mp_face_detection = mp.solutions.face_detection
+        face_detection = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+        results = face_detection.process(rgb_small_frame)
+        temp_face_locations = []
 
-            ih, iw, ic = frame.shape
+        if results.detections:
+            for detection in results.detections:
+                bboxC = detection.location_data.relative_bounding_box
+                ih, iw, ic = rgb_small_frame.shape
+                x_min = int(bboxC.xmin * iw)
+                y_min = int(bboxC.ymin * ih)
+                box_width = int(bboxC.width * iw)
+                box_height = int(bboxC.height * ih)
+                x_max = x_min + box_width
+                y_max = y_min + box_height
+                temp_face_locations.append((y_min, x_max, y_max, x_min))
 
-            # Detect faces
-            face_locations = face_recognition.face_locations(rgb_frame)
-            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        temp_face_encodings = face_recognition.face_encodings(rgb_small_frame, temp_face_locations)
+        temp_face_names = []
+        temp_face_summaries = []
 
-            # Initialize variables
-            face_names = []
-            face_summaries = []
-
-            for face_encoding in face_encodings:
-                # See if the face is a match for known faces
-                matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
-                name = "Unknown"
-                summary = ""
-
-                # Use the known face with the smallest distance to the new face
-                face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+        for face_encoding in temp_face_encodings:
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+            name = "Unknown"
+            summary = ""
+            face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+            if len(face_distances) > 0:
                 best_match_index = np.argmin(face_distances)
-                if matches and matches[best_match_index]:
+                if matches[best_match_index]:
                     name = known_face_names[best_match_index]
                     summary = known_face_summaries[best_match_index]
+            temp_face_names.append(name)
+            temp_face_summaries.append(summary)
 
-                face_names.append(name)
-                face_summaries.append(summary)
+        with lock:
+            face_locations = temp_face_locations
+            face_names = temp_face_names
+            face_summaries = temp_face_summaries
 
-            # Display the results
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        ih, iw, ic = frame.shape
+
+        # Resize frame for faster processing
+        small_frame = cv.resize(frame, (0, 0), fx=0.5, fy=0.5)
+        rgb_small_frame = cv.cvtColor(small_frame, cv.COLOR_BGR2RGB)
+
+        frame_counter += 1
+
+        if frame_counter % process_every_n_frames == 0:
+            # Start a new thread for face recognition
+            thread = threading.Thread(target=face_recognition_thread, args=(rgb_small_frame,))
+            thread.start()
+
+        # Display the results
+        with lock:
             for (top, right, bottom, left), name, summary in zip(face_locations, face_names, face_summaries):
+                # Scale back up face locations since the frame we detected in was scaled to 0.5
+                top *= 2
+                right *= 2
+                bottom *= 2
+                left *= 2
+
                 # Draw a rectangle around the face
                 cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
 
@@ -165,54 +185,54 @@ def main():
 
                 # Write the name and summary onto the white box
                 cv.putText(frame, name, (x + 5, y + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-                # Split summary into lines if necessary
+                # Split summary into lines
                 summary_lines = summary.split('\n')
                 for idx, line in enumerate(summary_lines):
                     cv.putText(frame, line, (x + 5, y + 40 + idx * 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
-            # Write frame to video if recording
+        # Write frame to video if recording
+        if recording:
+            video_writer.write(frame)
+            cv.putText(frame, 'Recording...', (10, ih - 10), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        cv.imshow('Head Scanner', frame)
+
+        key = cv.waitKey(1) & 0xFF
+        if key == ord('q'):
+            recording = not recording  # Toggle recording state
+
             if recording:
-                video_writer.write(frame)
-                cv.putText(frame, 'Recording...', (10, ih - 10), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                filename = "photo.png"
+                cv.imwrite(filename, frame)
 
-            cv.imshow('Head Scanner', frame)
+                # Start recording
+                filename = "video.avi"
+                fourcc = cv.VideoWriter_fourcc(*'XVID')
+                fps = 20.0
+                frame_size = (frame.shape[1], frame.shape[0])
+                video_writer = cv.VideoWriter(filename, fourcc, fps, frame_size)
+                print(f"Started recording: {filename}")
+            else:
+                # Stop recording
+                video_writer.release()
+                print(f"Stopped recording: video_{video_count}.avi")
+                video_count += 1
+                video_writer = None
+                name, summary = transcribe()
+                sanitized_name = sanitize_filename(name)
+                cv.imwrite(f"{sanitized_name}.png", frame)
+                upload_photo_to_mongodb(f"{sanitized_name}.png", name, summary)
 
-            key = cv.waitKey(1) & 0xFF
-            if key == ord('q'):
-                recording = not recording  # Toggle recording state
+                # Reload known faces after adding new one
+                known_face_encodings, known_face_names, known_face_summaries = load_known_faces_from_db()
 
-                if recording:
-                    filename = "photo.png"
-                    cv.imwrite(filename, frame)
+        elif key == 27:  # 'Esc' key to exit
+            if recording:
+                video_writer.release()
+            break
 
-                    # Start recording
-                    filename = "video.avi"
-                    fourcc = cv.VideoWriter_fourcc(*'XVID')
-                    fps = 20.0
-                    frame_size = (frame.shape[1], frame.shape[0])
-                    video_writer = cv.VideoWriter(filename, fourcc, fps, frame_size)
-                    print(f"Started recording: {filename}")
-                else:
-                    # Stop recording
-                    video_writer.release()
-                    print(f"Stopped recording: video_{video_count}.avi")
-                    video_count += 1
-                    video_writer = None
-                    name, summary = transcribe()
-                    upload_photo_to_mongodb(f"{name}.png", name, summary)
-
-                    # Reload known faces after adding new one
-                    known_face_encodings, known_face_names, known_face_summaries = load_known_faces_from_db()
-
-            elif key == 27:  # 'Esc' key to exit
-                if recording:
-                    video_writer.release()
-                break
-
-        cap.release()
-        cv.destroyAllWindows()
-
-
+    cap.release()
+    cv.destroyAllWindows()
 
 def transcribe():
     result = model.transcribe("audio.mp3")
@@ -230,58 +250,43 @@ def transcribe():
     summarywords = summarize_words(transcription_text)
     with open("words.txt", "w", encoding='utf-8') as f:
         f.write(summarywords)
-    return summaryname, summarywords  # Returning name and summary for later use
-
-
+    return summaryname.strip(), summarywords.strip()  # Returning name and summary for later use
 
 def summarize_name(text):
-    prompt = f" extract the name from here, only the name should be displayed no other words just name: {text}"
-    
-    #Use Cohere's summarize endpoint
+    prompt = f"Extract the name from the following text. Only the name should be displayed, no other words: {text}"
     response = co.chat(
-
-        message= prompt,
-        model='command-r-plus-08-2024',  # Choose the appropriate model
+        message=prompt,
+        model='command-xlarge-nightly',  # Use the appropriate model
         temperature=0.5,  # Controls randomness
     )
-
-    
-    return response.text
+    return response.text.strip()
 
 def summarize_words(text):
-    prompt = f" extract 3 to 4 key words that represent the person e.g sports, leetcode, video games, no other words just these 3-4 key words: {text}"
-    
-    #Use Cohere's summarize endpoint
+    prompt = f"Extract 3 to 4 keywords that represent the person (e.g., sports, leetcode, video games). Only these 3-4 keywords should be displayed: {text}"
     response = co.chat(
-
-        message= prompt,
-        model='command-r-plus-08-2024',  # Choose the appropriate model
+        message=prompt,
+        model='command-xlarge-nightly',  # Use the appropriate model
         temperature=0.5,  # Controls randomness
     )
-
-    
-    return response.text
-
+    return response.text.strip()
 
 def summarize_transcription(text):
     prompt = f"{text}"
 
     if len(prompt) < 250:  # If less than 250 chars
         return ''  # Return empty string, no summary needed
-    
-    # Use Cohere's summarize endpoint
+
     response = co.summarize(
         text=prompt,
         length="short",
         format="paragraph",
         model='summarize-medium',  # Choose the appropriate model
         temperature=0.5,  # Controls randomness
-        additional_command="add an empty line and then add the summary with the bullet points in a new line below the empty one"
+        additional_command="Add an empty line and then add the summary with bullet points in a new line below the empty one"
     )
 
     summary = response.summary
-    return summary
-
+    return summary.strip()
 
 if __name__ == "__main__":
     main()
