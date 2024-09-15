@@ -171,7 +171,7 @@ def main():
                 left *= 2
 
                 # Draw a rectangle around the face
-                cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                #cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
 
                 # Set the box size
                 box_width, box_height = 200, 150  # Size of the white box
@@ -208,7 +208,7 @@ def main():
                 # Start recording
                 filename = "video.avi"
                 fourcc = cv.VideoWriter_fourcc(*'XVID')
-                fps = 20.0
+                fps = 60.0
                 frame_size = (frame.shape[1], frame.shape[0])
                 video_writer = cv.VideoWriter(filename, fourcc, fps, frame_size)
                 print(f"Started recording: {filename}")
