@@ -12,6 +12,9 @@ import numpy as np
 import face_recognition
 import re
 import threading
+import sounddevice as sd
+import soundfile as sf
+from pydub import AudioSegment
 
 load_dotenv()
 
@@ -76,6 +79,21 @@ def textToWord():
     doc = aw.Document("transcription.txt")
     doc.save("transcription.docx")
 
+def audio_recording_thread(stop_event):
+    samplerate = 44100  # Sampling rate
+    channels = 1        # Number of audio channels
+    filename = 'output.wav'  # Temporary WAV file
+
+    with sf.SoundFile(filename, mode='w', samplerate=samplerate, channels=channels) as file:
+        def callback(indata, frames, time, status):
+            if status:
+                print(status)
+            file.write(indata.copy())
+
+        with sd.InputStream(samplerate=samplerate, channels=channels, callback=callback):
+            while not stop_event.is_set():
+                sd.sleep(100)
+
 def main():
     # Load known faces and metadata
     known_face_encodings, known_face_names, known_face_summaries = load_known_faces_from_db()
@@ -85,6 +103,7 @@ def main():
         print("Cannot open camera")
         exit()
 
+    facial_recognition_enabled = True  # Control flag for facial recognition
     recording = False
     video_writer = None
     video_count = 1  # Counter for saved videos
@@ -99,6 +118,10 @@ def main():
 
     # Create a lock for thread synchronization
     lock = threading.Lock()
+
+    # Initialize audio recording control variables
+    audio_stop_event = threading.Event()
+    audio_thread = None
 
     def face_recognition_thread(rgb_small_frame):
         nonlocal face_locations, face_names, face_summaries
@@ -150,45 +173,47 @@ def main():
 
         ih, iw, ic = frame.shape
 
-        # Resize frame for faster processing
-        small_frame = cv.resize(frame, (0, 0), fx=0.5, fy=0.5)
-        rgb_small_frame = cv.cvtColor(small_frame, cv.COLOR_BGR2RGB)
+        # Only perform facial recognition if enabled
+        if facial_recognition_enabled:
+            # Resize frame for faster processing
+            small_frame = cv.resize(frame, (0, 0), fx=0.5, fy=0.5)
+            rgb_small_frame = cv.cvtColor(small_frame, cv.COLOR_BGR2RGB)
 
-        frame_counter += 1
+            frame_counter += 1
 
-        if frame_counter % process_every_n_frames == 0:
-            # Start a new thread for face recognition
-            thread = threading.Thread(target=face_recognition_thread, args=(rgb_small_frame,))
-            thread.start()
+            if frame_counter % process_every_n_frames == 0:
+                # Start a new thread for face recognition
+                thread = threading.Thread(target=face_recognition_thread, args=(rgb_small_frame,))
+                thread.start()
 
-        # Display the results
-        with lock:
-            for (top, right, bottom, left), name, summary in zip(face_locations, face_names, face_summaries):
-                # Scale back up face locations since the frame we detected in was scaled to 0.5
-                top *= 2
-                right *= 2
-                bottom *= 2
-                left *= 2
+            # Display the results
+            with lock:
+                for (top, right, bottom, left), name, summary in zip(face_locations, face_names, face_summaries):
+                    # Scale back up face locations since the frame we detected in was scaled to 0.5
+                    top *= 2
+                    right *= 2
+                    bottom *= 2
+                    left *= 2
 
-                # Draw a rectangle around the face
-                #cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                    # Draw a rectangle around the face
+                    # cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
 
-                # Set the box size
-                box_width, box_height = 200, 150  # Size of the white box
+                    # Set the box size
+                    box_width, box_height = 200, 150  # Size of the white box
 
-                # Position the box to the right of the head
-                x = right + 10  # 10 pixels to the right of the face bounding box
-                y = top + int((bottom - top) / 2) - int(box_height / 2)  # Centered vertically
+                    # Position the box to the right of the head
+                    x = right + 10  # 10 pixels to the right of the face bounding box
+                    y = top + int((bottom - top) / 2) - int(box_height / 2)  # Centered vertically
 
-                # Draw the white box
-                cv.rectangle(frame, (x, y), (x + box_width, y + box_height), (255, 255, 255), -1)
+                    # Draw the white box
+                    cv.rectangle(frame, (x, y), (x + box_width, y + box_height), (255, 255, 255), -1)
 
-                # Write the name and summary onto the white box
-                cv.putText(frame, name, (x + 5, y + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-                # Split summary into lines
-                summary_lines = summary.split('\n')
-                for idx, line in enumerate(summary_lines):
-                    cv.putText(frame, line, (x + 5, y + 40 + idx * 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    # Write the name and summary onto the white box
+                    cv.putText(frame, name, (x + 5, y + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+                    # Split summary into lines
+                    summary_lines = summary.split('\n')
+                    for idx, line in enumerate(summary_lines):
+                        cv.putText(frame, line, (x + 5, y + 40 + idx * 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
         # Write frame to video if recording
         if recording:
@@ -202,22 +227,43 @@ def main():
             recording = not recording  # Toggle recording state
 
             if recording:
-                filename = "photo.png"
-                cv.imwrite(filename, frame)
+                # Disable facial recognition
+                facial_recognition_enabled = False
 
-                # Start recording
+                # Start audio recording
+                audio_stop_event.clear()
+                audio_thread = threading.Thread(target=audio_recording_thread, args=(audio_stop_event,))
+                audio_thread.start()
+                print("Started audio recording")
+
+                # Start video recording
                 filename = "video.avi"
                 fourcc = cv.VideoWriter_fourcc(*'XVID')
                 fps = 60.0
                 frame_size = (frame.shape[1], frame.shape[0])
                 video_writer = cv.VideoWriter(filename, fourcc, fps, frame_size)
-                print(f"Started recording: {filename}")
+                print(f"Started video recording: {filename}")
             else:
-                # Stop recording
+                # Stop audio recording
+                audio_stop_event.set()
+                audio_thread.join()
+                print("Stopped audio recording")
+
+                # Convert output.wav to output.mp3
+                sound = AudioSegment.from_wav('output.wav')
+                sound.export('output.mp3', format='mp3')
+                print("Converted audio to MP3 format")
+
+                # Stop video recording
                 video_writer.release()
-                print(f"Stopped recording: video_{video_count}.avi")
+                print(f"Stopped video recording: video_{video_count}.avi")
                 video_count += 1
                 video_writer = None
+
+                # Re-enable facial recognition
+                facial_recognition_enabled = True
+
+                # Proceed with transcription and other post-processing
                 name, summary = transcribe()
                 sanitized_name = sanitize_filename(name)
                 cv.imwrite(f"{sanitized_name}.png", frame)
@@ -228,6 +274,9 @@ def main():
 
         elif key == 27:  # 'Esc' key to exit
             if recording:
+                # Ensure resources are released properly
+                audio_stop_event.set()
+                audio_thread.join()
                 video_writer.release()
             break
 
@@ -235,7 +284,7 @@ def main():
     cv.destroyAllWindows()
 
 def transcribe():
-    result = model.transcribe("audio.mp3")
+    result = model.transcribe("output.mp3")
     transcription_text = result['text']
     summary = summarize_transcription(transcription_text)
     with open('transcription.txt', 'w', encoding='utf-8') as f:
