@@ -8,6 +8,12 @@ import aspose.words as aw
 from dotenv import load_dotenv
 import pymongo
 import gridfs
+import pyaudio
+import wave
+from pynput import keyboard
+from pydub import AudioSegment
+import time
+import os
 
 load_dotenv()
 
@@ -30,6 +36,82 @@ if not mongodb_uri:
 client = pymongo.MongoClient(mongodb_uri)
 db = client['mydatabase']  # Replace 'mydatabase' with your database name
 fs = gridfs.GridFS(db)
+
+# Parameters for recording
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+CHUNK = 2048  # Increased chunk size
+
+# Global variables
+audio = pyaudio.PyAudio()
+stream = None
+frames = []
+recording = False
+listener = None
+
+def on_press(key):
+    global recording, listener
+    try:
+        if key.char == 'q':
+            if recording:
+                print("Stopping recording...")
+                recording = False
+                listener.stop()
+            else:
+                print("Starting recording...")
+                recording = True
+    except AttributeError:
+        pass
+
+def start_recording():
+    global stream, frames, recording, listener
+    stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+    frames = []
+    recording = True
+    listener = keyboard.Listener(on_press=on_press)
+    listener.start()
+
+def stop_recording():
+    global stream, audio, frames, listener
+    recording = False
+    if stream:
+        stream.stop_stream()
+        stream.close()
+    audio.terminate()
+
+    # Save the recorded audio to a WAV file
+    wav_filename = "output.wav"
+    with wave.open(wav_filename, 'wb') as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(audio.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b''.join(frames))
+
+    # Convert WAV to MP3
+    mp3_filename = "output.mp3"
+    sound = AudioSegment.from_wav(wav_filename)
+    sound.export(mp3_filename, format="mp3")
+    os.remove(wav_filename)  # Optional: remove the WAV file
+
+    print(f"Recording saved to {mp3_filename}")
+
+def record_audio():
+    global recording
+    print("Press 'q' to stop recording.")
+    start_recording()
+    while recording or listener.running:
+        if recording:
+            try:
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                frames.append(data)
+            except IOError as e:
+                print(f"Error: {e}")
+            time.sleep(0.01)  # Small delay
+    stop_recording()
+
+
+
 
 def upload_photo_to_mongodb(filename, name, summary):
     try:
@@ -121,6 +203,7 @@ def main():
             key = cv.waitKey(1) & 0xFF
             if key == ord('q'):
                 recording = not recording  # Toggle recording state
+                record_audio()
 
                 if recording:
                     filename = "photo.png"
