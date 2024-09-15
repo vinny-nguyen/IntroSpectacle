@@ -9,6 +9,76 @@ from dotenv import load_dotenv
 import pymongo
 import gridfs
 
+#New files please install for mp3 conversion
+import pyaudio
+import wave
+from pynput import keyboard
+from pydub import AudioSegment
+import time
+import os
+
+# Parameters for recording
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+CHUNK = 2048  # Increased chunk size
+
+class Recorder:
+    def __init__(self):
+        self.audio = pyaudio.PyAudio()
+        self.stream = self.audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+        self.frames = []
+        self.recording = False
+        self.listener = keyboard.Listener(on_press=self.on_press)
+        self.listener.start()
+
+    def on_press(self, key):
+        try:
+            if key.char == 'q':
+                if self.recording:
+                    print("Stopping recording...")
+                    self.recording = False
+                    self.listener.stop()
+                else:
+                    print("Starting recording...")
+                    self.recording = True
+        except AttributeError:
+            pass
+
+    def record(self):
+        print("Press 'q' to start/stop recording.")
+        while self.recording or self.listener.running:
+            if self.recording:
+                try:
+                    data = self.stream.read(CHUNK, exception_on_overflow=False)
+                    self.frames.append(data)
+                except IOError as e:
+                    print(f"Error: {e}")
+                time.sleep(0.01)  # Small delay
+
+        self.stream.stop_stream()
+        self.stream.close()
+        self.audio.terminate()
+
+        # Save the recorded audio to a WAV file
+        wav_filename = "output.wav"
+        with wave.open(wav_filename, 'wb') as wf:
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(self.audio.get_sample_size(FORMAT))
+            wf.setframerate(RATE)
+            wf.writeframes(b''.join(self.frames))
+
+        # Convert WAV to MP3
+        mp3_filename = "output.mp3"
+        sound = AudioSegment.from_wav(wav_filename)
+        sound.export(mp3_filename, format="mp3")
+        os.remove(wav_filename)  # Optional: remove the WAV file
+
+        print(f"Recording saved to {mp3_filename}")
+
+
+
+
 load_dotenv()
 
 cohere_api_key = os.environ.get('COHERE_API_KEY')
@@ -202,3 +272,5 @@ def summarize_transcription(text):
 
 if __name__ == "__main__":
     main()
+    recorder = Recorder()
+    recorder.record()
