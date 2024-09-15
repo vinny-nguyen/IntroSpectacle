@@ -1,9 +1,10 @@
+import os
 import cv2 as cv
 import mediapipe as mp
 import time
 import whisper
 import cohere
-import os
+
 import aspose.words as aw
 from dotenv import load_dotenv
 import pymongo
@@ -17,6 +18,9 @@ import soundfile as sf
 from pydub import AudioSegment
 
 load_dotenv()
+
+import logging
+logging.getLogger('mediapipe').setLevel(logging.ERROR)
 
 cohere_api_key = os.environ.get('COHERE_API_KEY')
 co = cohere.Client(cohere_api_key)
@@ -94,9 +98,22 @@ def audio_recording_thread(stop_event):
             while not stop_event.is_set():
                 sd.sleep(100)
 
+def refresh_database():
+    global known_face_encodings, known_face_names, known_face_summaries
+    while True:
+        time.sleep(60)  # Sleep for 1 minute
+        print("Refreshing database...")
+        known_face_encodings, known_face_names, known_face_summaries = load_known_faces_from_db()
+        print("Database refreshed.")
+
 def main():
     # Load known faces and metadata
+    global known_face_encodings, known_face_names, known_face_summaries
     known_face_encodings, known_face_names, known_face_summaries = load_known_faces_from_db()
+
+    # Start database refresher thread
+    db_refresh_thread = threading.Thread(target=refresh_database, daemon=True)
+    db_refresh_thread.start()
 
     cap = cv.VideoCapture(0)
     if not cap.isOpened():
@@ -126,7 +143,6 @@ def main():
     def face_recognition_thread(rgb_small_frame):
         nonlocal face_locations, face_names, face_summaries
         # Perform face detection and recognition
-        # Use Mediapipe for face detection
         mp_face_detection = mp.solutions.face_detection
         face_detection = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
         results = face_detection.process(rgb_small_frame)
@@ -173,49 +189,33 @@ def main():
 
         ih, iw, ic = frame.shape
 
-        # Only perform facial recognition if enabled
         if facial_recognition_enabled:
-            # Resize frame for faster processing
             small_frame = cv.resize(frame, (0, 0), fx=0.5, fy=0.5)
             rgb_small_frame = cv.cvtColor(small_frame, cv.COLOR_BGR2RGB)
 
             frame_counter += 1
 
             if frame_counter % process_every_n_frames == 0:
-                # Start a new thread for face recognition
                 thread = threading.Thread(target=face_recognition_thread, args=(rgb_small_frame,))
                 thread.start()
 
-            # Display the results
             with lock:
                 for (top, right, bottom, left), name, summary in zip(face_locations, face_names, face_summaries):
-                    # Scale back up face locations since the frame we detected in was scaled to 0.5
                     top *= 2
                     right *= 2
                     bottom *= 2
                     left *= 2
 
-                    # Draw a rectangle around the face
-                    # cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                    box_width, box_height = 200, 150
+                    x = right + 10
+                    y = top + int((bottom - top) / 2) - int(box_height / 2)
 
-                    # Set the box size
-                    box_width, box_height = 200, 150  # Size of the white box
-
-                    # Position the box to the right of the head
-                    x = right + 10  # 10 pixels to the right of the face bounding box
-                    y = top + int((bottom - top) / 2) - int(box_height / 2)  # Centered vertically
-
-                    # Draw the white box
                     cv.rectangle(frame, (x, y), (x + box_width, y + box_height), (255, 255, 255), -1)
-
-                    # Write the name and summary onto the white box
                     cv.putText(frame, name, (x + 5, y + 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-                    # Split summary into lines
                     summary_lines = summary.split('\n')
                     for idx, line in enumerate(summary_lines):
                         cv.putText(frame, line, (x + 5, y + 40 + idx * 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
-        # Write frame to video if recording
         if recording:
             video_writer.write(frame)
             cv.putText(frame, 'Recording...', (10, ih - 10), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -224,57 +224,47 @@ def main():
 
         key = cv.waitKey(1) & 0xFF
         if key == ord('q'):
-            recording = not recording  # Toggle recording state
+            recording = not recording
 
             if recording:
-                # Disable facial recognition
                 facial_recognition_enabled = False
 
-                # Start audio recording
                 audio_stop_event.clear()
                 audio_thread = threading.Thread(target=audio_recording_thread, args=(audio_stop_event,))
                 audio_thread.start()
                 print("Started audio recording")
 
-                # Start video recording
                 filename = "video.avi"
                 fourcc = cv.VideoWriter_fourcc(*'XVID')
-                fps = 60.0
+                fps = 30.0
                 frame_size = (frame.shape[1], frame.shape[0])
                 video_writer = cv.VideoWriter(filename, fourcc, fps, frame_size)
                 print(f"Started video recording: {filename}")
             else:
-                # Stop audio recording
                 audio_stop_event.set()
                 audio_thread.join()
                 print("Stopped audio recording")
 
-                # Convert output.wav to output.mp3
                 sound = AudioSegment.from_wav('output.wav')
                 sound.export('output.mp3', format='mp3')
                 print("Converted audio to MP3 format")
 
-                # Stop video recording
                 video_writer.release()
                 print(f"Stopped video recording: video_{video_count}.avi")
                 video_count += 1
                 video_writer = None
 
-                # Re-enable facial recognition
                 facial_recognition_enabled = True
 
-                # Proceed with transcription and other post-processing
                 name, summary = transcribe()
                 sanitized_name = sanitize_filename(name)
                 cv.imwrite(f"{sanitized_name}.png", frame)
                 upload_photo_to_mongodb(f"{sanitized_name}.png", name, summary)
 
-                # Reload known faces after adding new one
                 known_face_encodings, known_face_names, known_face_summaries = load_known_faces_from_db()
 
         elif key == 27:  # 'Esc' key to exit
             if recording:
-                # Ensure resources are released properly
                 audio_stop_event.set()
                 audio_thread.join()
                 video_writer.release()
@@ -299,14 +289,14 @@ def transcribe():
     summarywords = summarize_words(transcription_text)
     with open("words.txt", "w", encoding='utf-8') as f:
         f.write(summarywords)
-    return summaryname.strip(), summarywords.strip()  # Returning name and summary for later use
+    return summaryname.strip(), summarywords.strip()
 
 def summarize_name(text):
     prompt = f"Extract the name from the following text. Only the name should be displayed, no other words: {text}"
     response = co.chat(
         message=prompt,
-        model='command-xlarge-nightly',  # Use the appropriate model
-        temperature=0.5,  # Controls randomness
+        model='command-xlarge-nightly',
+        temperature=0.5,
     )
     return response.text.strip()
 
@@ -314,23 +304,23 @@ def summarize_words(text):
     prompt = f"Extract 3 to 4 keywords that represent the person (e.g., sports, leetcode, video games). Only these 3-4 keywords should be displayed: {text}"
     response = co.chat(
         message=prompt,
-        model='command-xlarge-nightly',  # Use the appropriate model
-        temperature=0.5,  # Controls randomness
+        model='command-xlarge-nightly',
+        temperature=0.5,
     )
     return response.text.strip()
 
 def summarize_transcription(text):
     prompt = f"{text}"
 
-    if len(prompt) < 250:  # If less than 250 chars
-        return ''  # Return empty string, no summary needed
+    if len(prompt) < 250:
+        return '' 
 
     response = co.summarize(
         text=prompt,
         length="short",
         format="paragraph",
-        model='summarize-medium',  # Choose the appropriate model
-        temperature=0.5,  # Controls randomness
+        model='summarize-medium',
+        temperature=0.5,
         additional_command="Add an empty line and then add the summary with bullet points in a new line below the empty one"
     )
 
