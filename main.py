@@ -140,7 +140,7 @@ def main():
                     video_count += 1
                     video_writer = None
                     name,summary = transcribe()
-                    upload_photo_to_mongodb(f"{name}.png", name, summary)
+                    upload_photo_to_mongodb("photo.png", name, summary)
 
             elif key == 27:  # 'Esc' key to exit
                 if recording:
