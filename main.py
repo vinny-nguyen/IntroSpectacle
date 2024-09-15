@@ -6,8 +6,78 @@ import cohere
 import os
 import aspose.words as aw
 from dotenv import load_dotenv
-import face_recognition
-import numpy as np
+import pymongo
+import gridfs
+
+#New files please install for mp3 conversion
+import pyaudio
+import wave
+from pynput import keyboard
+from pydub import AudioSegment
+import time
+import os
+
+# Parameters for recording
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+CHUNK = 2048  # Increased chunk size
+
+class Recorder:
+    def __init__(self):
+        self.audio = pyaudio.PyAudio()
+        self.stream = self.audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+        self.frames = []
+        self.recording = False
+        self.listener = keyboard.Listener(on_press=self.on_press)
+        self.listener.start()
+
+    def on_press(self, key):
+        try:
+            if key.char == 'q':
+                if self.recording:
+                    print("Stopping recording...")
+                    self.recording = False
+                    self.listener.stop()
+                else:
+                    print("Starting recording...")
+                    self.recording = True
+        except AttributeError:
+            pass
+
+    def record(self):
+        print("Press 'q' to start/stop recording.")
+        while self.recording or self.listener.running:
+            if self.recording:
+                try:
+                    data = self.stream.read(CHUNK, exception_on_overflow=False)
+                    self.frames.append(data)
+                except IOError as e:
+                    print(f"Error: {e}")
+                time.sleep(0.01)  # Small delay
+
+        self.stream.stop_stream()
+        self.stream.close()
+        self.audio.terminate()
+
+        # Save the recorded audio to a WAV file
+        wav_filename = "output.wav"
+        with wave.open(wav_filename, 'wb') as wf:
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(self.audio.get_sample_size(FORMAT))
+            wf.setframerate(RATE)
+            wf.writeframes(b''.join(self.frames))
+
+        # Convert WAV to MP3
+        mp3_filename = "output.mp3"
+        sound = AudioSegment.from_wav(wav_filename)
+        sound.export(mp3_filename, format="mp3")
+        os.remove(wav_filename)  # Optional: remove the WAV file
+
+        print(f"Recording saved to {mp3_filename}")
+
+
+
 
 load_dotenv()
 
@@ -20,73 +90,32 @@ if not cohere_api_key:
     raise ValueError("No Cohere API key found. Please set the COHERE_API_KEY environment variable.")
 
 
-def capture_face_image():
-    cap = cv.VideoCapture(0)
-    if not cap.isOpened():
-        print("Cannot open camera")
-        return None
 
-    mp_face_detection = mp.solutions.face_detection
+mongodb_uri = os.environ.get('MONGODB_URI')
 
-    with mp_face_detection.FaceDetection(
-        model_selection=1, min_detection_confidence=0.5) as face_detection:
+if not mongodb_uri:
+    raise ValueError("No MongoDB URI found. Please set the MONGODB_URI environment variable.")
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Can't receive frame (stream end?). Exiting ...")
-                break
 
-            # Convert the BGR image to RGB.
-            image = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-            image.flags.writeable = False
-            results = face_detection.process(image)
+client = pymongo.MongoClient(mongodb_uri)
+db = client['mydatabase']  # Replace 'mydatabase' with your database name
+fs = gridfs.GridFS(db)
 
-            if results.detections:
-                # Face detected; capture the image
-                image.flags.writeable = True
-                # Convert back to BGR for OpenCV
-                image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-                cap.release()
-                cv.destroyAllWindows()
-                return image  # Return the captured image
+def upload_photo_to_mongodb(filename, name, summary):
+    try:
+        with open(filename, 'rb') as f:
+            contents = f.read()
+            fs.put(contents, filename=filename, metadata={'name': name, 'summary': summary})
+            print(f"Uploaded {filename} to MongoDB with metadata.")
+    except Exception as e:
+        print(f"An error occurred while uploading to MongoDB: {e}")
 
-            # Display the frame for visual feedback (optional)
-            cv.imshow('Face Capture', frame)
-            if cv.waitKey(1) & 0xFF == 27:  # Press 'Esc' to exit
-                break
-
-    cap.release()
-    cv.destroyAllWindows()
-    return None
-
-def compute_face_encoding(image):
-    # image: numpy array image in RGB format
-    face_locations = face_recognition.face_locations(image)
-    if len(face_locations) == 0:
-        print("No face found in the image.")
-        return None
-    face_encoding = face_recognition.face_encodings(image, known_face_locations=face_locations)[0]
-    return face_encoding
-
-def save_person_to_db(db, face_encoding, name, points):
-    collection = db['people']
-
-    person_document = {
-        'name': name,
-        'points': points,
-        'face_encoding': face_encoding.tolist()  # Convert NumPy array to list
-    }
-
-    result = collection.insert_one(person_document)
-    print(f"Inserted document ID: {result.inserted_id}")
 
 def textToWord():
     doc = aw.Document("transcription.txt")
     doc.save("transcription.docx") 
     #doc = aw.Document("summaryco.txt")
     #doc.save("summaryco.docx") 
-
 
 
 def main():
@@ -142,25 +171,12 @@ def main():
                     bbox = int(bboxC.xmin * iw), int(bboxC.ymin * ih), \
                            int(bboxC.width * iw), int(bboxC.height * ih)
 
-                    # Draw a rectangle around the face
-                    #cv.rectangle(image, bbox, (0, 255, 0), 2)
-
                     # Set the box size to 200x150 pixels
                     box_width, box_height = 200, 150  # Size of the white box
 
                     # Position the box to the right of the head
                     x = bbox[0] + bbox[2] + 10  # 10 pixels to the right of the face bounding box
                     y = bbox[1] + int(bbox[3] / 2) - int(box_height / 2)  # Centered vertically
-
-                    # Remove the constraints that prevent the box from exiting the frame
-                    # Comment out or remove the following code:
-
-                    # if x + box_width > iw:
-                    #     x = iw - box_width - 10
-                    # if y + box_height > ih:
-                    #     y = ih - box_height - 10
-                    # if y < 0:
-                    #     y = 10
 
                     # Draw the white box
                     cv.rectangle(image, (x, y), (x + box_width, y + box_height), (255, 255, 255), -1)
@@ -179,6 +195,7 @@ def main():
                 if recording:
                     filename = "photo.png"
                     cv.imwrite(filename, image)
+                    
                     # Start recording
                     filename = "video.avi"
                     fourcc = cv.VideoWriter_fourcc(*'XVID')
@@ -192,8 +209,8 @@ def main():
                     print(f"Stopped recording: video_{video_count}.avi")
                     video_count += 1
                     video_writer = None
-                    transcribe()
-
+                    name,summary = transcribe()
+                    upload_photo_to_mongodb("photo.png", name, summary)
 
             elif key == 27:  # 'Esc' key to exit
                 if recording:
@@ -215,6 +232,7 @@ def transcribe():
     summaryname = summarize_name(transcription_text)
     with open("name.txt", "w", encoding='utf-8') as f:
         f.write(summaryname)
+    return summaryname, summary #returning name and summary for later use
 
 
 def summarize_name(text):
@@ -254,3 +272,5 @@ def summarize_transcription(text):
 
 if __name__ == "__main__":
     main()
+    recorder = Recorder()
+    recorder.record()
