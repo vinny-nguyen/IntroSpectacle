@@ -17,12 +17,11 @@ import sounddevice as sd
 import soundfile as sf
 from pydub import AudioSegment
 
-load_dotenv()
+load_dotenv() #we load environment here for private variables
 
-import logging
-logging.getLogger('mediapipe').setLevel(logging.ERROR)
 
-cohere_api_key = os.environ.get('COHERE_API_KEY')
+#initialize apis and database
+cohere_api_key = os.environ.get('COHERE_API_KEY') 
 co = cohere.Client(cohere_api_key)
 
 model = whisper.load_model("base")
